@@ -15,6 +15,7 @@
 #include <linux/fcntl.h>
 #include <linux/workqueue.h>
 #include <linux/seq_file.h>
+#include <linux/spinlock.h>
 
 #define MODULE_NAME "kp"
 #define MAX_CONF 4096
@@ -35,6 +36,7 @@ static struct my_data {
         char *log;
         unsigned long log_index;
         unsigned long log_len;
+        spinlock_t lock;
 } hook_data;
 
 typedef struct {
@@ -160,12 +162,14 @@ static int do_log(const char *fmt, ...)
 
         len = strlen(tmp);
         tlen = hook_data.log_index + len;
+        spin_lock(&hook_data.lock);
         if (tlen > hook_data.log_len) {
                 tlen = (tlen / MAX_LOG + 1) * MAX_LOG;
                 p = kmalloc(tlen, GFP_ATOMIC);
                 if (p == NULL) {
                         printk("log to /proc/%s/log failed!\n", MODULE_NAME);
-                        return -1;
+                        len = -1;
+                        goto out;
                 }
                 // copy old log
                 hook_data.log_len = tlen;
@@ -175,9 +179,11 @@ static int do_log(const char *fmt, ...)
         }
 
         strcat(hook_data.log + hook_data.log_index, tmp);
-        kfree(tmp);
         hook_data.log_index += len;
 
+out:
+        spin_unlock(&hook_data.lock);
+        kfree(tmp);
         return len;
 }
 
@@ -552,7 +558,9 @@ static int __init kp_init(void)
         }
 
         hook_data.log_len = MAX_LOG;
-        hook_data.log_index = sprintf(hook_data.log, "call\ttime\t\t\tcommand\t\tuid\teuid\tpid\tfile\n");
+        hook_data.log_index = 0;
+        spin_lock_init(&hook_data.lock);
+        do_log("call\ttime\t\t\tcommand\t\tuid\teuid\tpid\tfile\n");
         
         hook_log = proc_create("log", 0, hook_dir, &log_fops);
         //hook_log = create_proc_entry("log", 0444, hook_dir);
