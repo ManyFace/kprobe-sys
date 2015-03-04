@@ -23,6 +23,12 @@
 #define MAX_COMM  256
 #define MAX_BUF  1024 * 1024
 
+#ifdef DEBUG
+#define dprint(fmt, args...) printk(fmt, ##args)
+#else
+#define dprint(fmt, args...) do {} while (0)
+#endif
+
 
 static struct my_data {
         char *conf;
@@ -134,13 +140,51 @@ static void log_to_user(const char *call, const char *comm, const char *filename
         
 }
 */
+
+static int do_log(const char *fmt, ...)
+{
+        int tlen, len;
+        char *p = NULL;
+        char *tmp = NULL;
+        va_list args;
+
+        tmp = kmalloc(512, GFP_ATOMIC);
+        if (tmp == NULL) {
+                printk("can not get memory for pre log, skip write!\n");
+                return -1;
+        }
+
+        va_start(args, fmt);
+        vsnprintf(tmp, INT_MAX, fmt, args);
+        va_end(args);
+
+        len = strlen(tmp);
+        tlen = hook_data.log_index + len;
+        if (tlen > hook_data.log_len) {
+                tlen = (tlen / MAX_LOG + 1) * MAX_LOG;
+                p = kmalloc(tlen, GFP_ATOMIC);
+                if (p == NULL) {
+                        printk("log to /proc/%s/log failed!\n", MODULE_NAME);
+                        return -1;
+                }
+                // copy old log
+                hook_data.log_len = tlen;
+                strncpy(p, hook_data.log, hook_data.log_index);
+                kfree(hook_data.log);
+                hook_data.log = p;
+        }
+
+        strcat(hook_data.log + hook_data.log_index, tmp);
+        kfree(tmp);
+        hook_data.log_index += len;
+
+        return len;
+}
+
 static void write_log(const char *call, const char *filename,
                       pid_t pid, uid_t uid, uid_t euid,
                       const char *comm) {
-        char *p;
         char timev[64];
-        unsigned long len = hook_data.log_index + strlen(call) + strlen(filename) + strlen(comm) + 64;
-
         struct timeval time;
         unsigned long local_time;
         struct rtc_time tm;
@@ -152,27 +196,8 @@ static void write_log(const char *call, const char *filename,
         sprintf(timev, "%04d-%02d-%02d %02d:%02d:%02d",
                 tm.tm_year + 1900, tm.tm_mon + 1,
                 tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
-        
-        
-        if (len > hook_data.log_len) {
-                len = (len / MAX_LOG + 1) * MAX_LOG;
-                p = kmalloc(len, GFP_ATOMIC);
-                if (p == NULL) {
-                        printk("not enouth memory, skip write!\n");
-                        return;
-                }
-                // copy old log
-                hook_data.log_len = len;
-                strncpy(p, hook_data.log, hook_data.log_index);
-                kfree(hook_data.log);
-                hook_data.log = p;
-        }
-        len = sprintf(hook_data.log + hook_data.log_index,
-                      "%s\t%s\t%s\t%d\t%d\t%d\t%s\n",
-                      call, timev, comm, uid, euid, pid, filename);
-
-        hook_data.log_index += len;
-
+        do_log("%s\t%s\t%s\t%d\t%d\t%d\t%s\n",
+                call, timev, comm, uid, euid, pid, filename);
 }
 
 /* return 1 to pass filter */
@@ -295,7 +320,7 @@ static asmlinkage long jp_sys_open(const char __user *filename, int flags, umode
 
         get_command(current, comm);
         if (hook_filter(comm)) {
-                printk("sys_open probed, comm = %s\n", comm);
+                dprint("sys_open probed, comm = %s\n", comm);
                 write_log("open", filename, current->pid, current->cred->uid,
                           current->cred->euid, comm);
         }
@@ -345,6 +370,7 @@ static void copy_file(const char *filename)
 
         kwrite_file(cfp, buf, ret);
         kclose_file(cfp);
+        do_log("## Write a copy of file %s to %s\n", filename, cf);
 out1:
         kfree(buf);
 out:
@@ -381,7 +407,7 @@ static asmlinkage long jp_sys_close(unsigned int fd)
 
         get_command(current, comm);
         if (hook_filter(comm)) {
-                printk("sys_close probed, comm = %s\n", comm);
+                dprint("sys_close probed, comm = %s\n", comm);
                 //log_to_user("close", comm, filename);
                 write_log("close", filename, current->pid,
                           current->cred->uid,
@@ -420,7 +446,7 @@ static asmlinkage int jp_sys_execve(const char __user *filenamei,
 {
         get_command(current, comm);
         if (hook_filter(filenamei)) {
-                printk("sys_execve probed, comm = %s\n", filenamei);
+                dprint("sys_execve probed, comm = %s\n", filenamei);
                 //log_to_user("execve", comm, filenamei);
                 write_log("execve", filenamei, current->pid,
                           current->cred->uid,
@@ -435,7 +461,7 @@ static asmlinkage long jp_sys_creat(const char __user *pathname, umode_t mode)
 {
         get_command(current, comm);
         if (hook_filter(comm)) {
-                printk("sys_creat probed, comm = %s\n", comm);
+                dprint("sys_creat probed, comm = %s\n", comm);
                 write_log("creat", pathname, current->pid, current->cred->uid,
                           current->cred->euid, comm);
         }
@@ -499,13 +525,13 @@ static int __init kp_init(void)
 
         hook_dir = proc_mkdir(MODULE_NAME, NULL);
         if (hook_dir == NULL) {
-                printk("can not create /proc/kp dir!\n");
+                printk("can not create /proc/%s dir!\n", MODULE_NAME);
                 goto out;
         }
 
         hook_conf = create_proc_entry("conf", 0644, hook_dir);
         if (hook_conf == NULL) {
-                printk("can not create /proc/kp/conf file!\n");
+                printk("can not create /proc/%s/conf file!\n", MODULE_NAME);
                 goto no_conf_file;
         }
         hook_data.conf = kmalloc(MAX_CONF, GFP_KERNEL);
@@ -531,7 +557,7 @@ static int __init kp_init(void)
         hook_log = proc_create("log", 0, hook_dir, &log_fops);
         //hook_log = create_proc_entry("log", 0444, hook_dir);
         if (hook_log == NULL) {
-                printk("can not create /proc/kp/log file!\n");
+                printk("can not create /proc/%s/log file!\n", MODULE_NAME);
                 goto no_log_file;
         }
 
