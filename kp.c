@@ -215,6 +215,9 @@ static int hook_filter(const char *comm)
         int find = 0;
 
 
+        if (!strcmp(comm, ""))
+                return 0;
+        
         if (!strcmp(hook_data.conf, ""))
                 return 0;
 
@@ -239,59 +242,112 @@ static int hook_filter(const char *comm)
         
 }
 
-/* get executable command from task_struct */
-static void get_command(struct task_struct *task, char *buf)
+static int __read_remote_vm(struct task_struct *tsk, struct mm_struct *mm,
+                              unsigned long addr, void *buf, int len)
 {
-        struct mm_struct *mm = get_task_mm(task);
-        struct vm_area_struct *vma;
-        unsigned long addr;
-        unsigned long len;
+	struct vm_area_struct *vma;
+	void *old_buf = buf;
 
-        int bytes, ret, offset;
-        void *maddr;
-        struct page *page = NULL;
+	down_read(&mm->mmap_sem);
+	/* ignore errors, just check how much was successfully transferred */
+	while (len) {
+		int bytes, ret, offset;
+		void *maddr;
+		struct page *page = NULL;
 
+		ret = get_user_pages(tsk, mm, addr, 1,
+				0, 1, &page, &vma);
+		if (ret <= 0) {
+			/*
+			 * Check if this is a VM_IO | VM_PFNMAP VMA, which
+			 * we can access using slightly different code.
+			 */
+#ifdef CONFIG_HAVE_IOREMAP_PROT
+			vma = find_vma(mm, addr);
+			if (!vma || vma->vm_start > addr)
+				break;
+			if (vma->vm_ops && vma->vm_ops->access)
+				ret = vma->vm_ops->access(vma, addr, buf,
+							  len, 0);
+			if (ret <= 0)
+#endif
+				break;
+			bytes = ret;
+		} else {
+			bytes = len;
+			offset = addr & (PAGE_SIZE-1);
+			if (bytes > PAGE_SIZE-offset)
+				bytes = PAGE_SIZE-offset;
 
-        if (!mm)
-                return;
-        if (!mm->arg_end)
-                goto out_mm;
+			maddr = kmap(page);
 
-        len = mm->arg_end - mm->arg_start;
-
-        if (len > PAGE_SIZE)
-                len = PAGE_SIZE;
-
-        down_read(&mm->mmap_sem);
-
-        while (len) {
-
-                addr = mm->arg_start;
-
-                ret = get_user_pages(task, mm, addr, 1,
-                                     0, 1, &page, &vma);
-                if (ret < 0)
-                        return;
-                else {
-                        bytes = len;
-                        offset = mm->arg_start & (PAGE_SIZE - 1);
-                        if (bytes > PAGE_SIZE - offset)
-                                bytes = PAGE_SIZE - offset;
-                        maddr = kmap(page);
                         copy_from_user_page(vma, page, addr,
                                             buf, maddr + offset, bytes);
-                        kunmap(page);
-                        page_cache_release(page);
-                }
-                len -= bytes;
-                buf += bytes;
-                addr += bytes;
-        }
-        up_read(&mm->mmap_sem);       
+			kunmap(page);
+			page_cache_release(page);
+		}
+		len -= bytes;
+		buf += bytes;
+		addr += bytes;
+	}
+	up_read(&mm->mmap_sem);
 
+	return buf - old_buf;
+}
+
+
+int read_process_vm(struct task_struct *tsk, unsigned long addr,
+                      void *buf, int len)
+{
+	struct mm_struct *mm;
+	int ret;
+
+	mm = get_task_mm(tsk);
+	if (!mm)
+		return 0;
+
+	ret = __read_remote_vm(tsk, mm, addr, buf, len);
+	mmput(mm);
+
+	return ret;
+}
+
+/* get executable command from task_struct */
+static int get_command(struct task_struct *task, char * buffer)
+{
+	int res = 0;
+	unsigned int len;
+	struct mm_struct *mm = get_task_mm(task);
+	if (!mm)
+		goto out;
+	if (!mm->arg_end)
+		goto out_mm;	/* Shh! No looking before we're done */
+
+ 	len = mm->arg_end - mm->arg_start;
+ 
+	if (len > PAGE_SIZE)
+		len = PAGE_SIZE;
+ 
+	res = read_process_vm(task, mm->arg_start, buffer, len);
+
+	// If the nul at the end of args has been overwritten, then
+	// assume application is using setproctitle(3).
+	if (res > 0 && buffer[res-1] != '\0' && len < PAGE_SIZE) {
+		len = strnlen(buffer, res);
+		if (len < res) {
+		    res = len;
+		} else {
+			len = mm->env_end - mm->env_start;
+			if (len > PAGE_SIZE - res)
+				len = PAGE_SIZE - res;
+			res += read_process_vm(task, mm->env_start, buffer+res, len);
+			res = strnlen(buffer, res);
+		}
+	}
 out_mm:
-        mmput(mm);
-        
+	mmput(mm);
+out:
+	return res;
 }
 
 static int  proc_read_conf(char *page, char **start, off_t off, int count,
