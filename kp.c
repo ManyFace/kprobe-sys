@@ -418,7 +418,7 @@ static asmlinkage long jp_sys_close(unsigned int fd)
                 write_log("close", filename, current->pid,
                           current->cred->uid,
                           current->cred->euid, comm);
-                if (strstr(filename, ".so")) {
+                if (strstr(filename, pat)) {
                         // init a work to perform the copy 
                         work = (my_work_t*)kmalloc(sizeof(my_work_t), GFP_ATOMIC);
                         if (work == NULL) {
