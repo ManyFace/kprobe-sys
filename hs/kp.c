@@ -56,6 +56,8 @@ void (*mem_txt_writeable)(unsigned long addr);
 void (*mem_txt_restore)(void);
 int mem_text_wp = 0;
 
+unsigned long my_copy_from_user(void *to, const void __user *from, unsigned long n);
+
 #define MEM_TXT_BEGIN(addr, flags) \
         mem_txt_write_spinlock(&flags); \
         mem_txt_writeable(addr)
@@ -99,6 +101,8 @@ void (*my_remove_proc_entry)(const char *name, struct proc_dir_entry *parent);
 void (*my__raw_spin_lock)(raw_spinlock_t *lock);
 void (*my__raw_spin_unlock)(raw_spinlock_t *lock);
 
+unsigned long __must_check (*my___copy_from_user)(void *to, const void __user *from, unsigned long n);
+
 void my_spin_lock(spinlock_t *);
 void my_spin_unlock(spinlock_t *);
 
@@ -118,7 +122,7 @@ unsigned long get_fun_ret = 0;
         
 #define GET_FUN(name) _GET_FUN(my_, name, get_fun_ret)
                                         
-
+#define OFFSET(start, end) ((unsigned char*)end - (unsigned char*)start)
                       
 asmlinkage long (*rel_sys_open)(const char __user *filename, int flags, umode_t mode);
 asmlinkage long (*rel_sys_close)(unsigned int fd);
@@ -195,6 +199,15 @@ void my_spin_unlock(spinlock_t *lock)
         my__raw_spin_unlock(&lock->rlock);
 }
 
+unsigned long  my_copy_from_user(void *to, const void __user *from, unsigned long n)
+{
+        if (access_ok(VERIFY_READ, from, n))
+                n = my___copy_from_user(to, from, n);
+        else
+                memset(to, 0, n);
+        return n;
+}
+
 static int load_func(void)
 {
 
@@ -222,6 +235,7 @@ static int load_func(void)
         GET_FUN(remove_proc_entry);
         GET_FUN(_raw_spin_lock);
         GET_FUN(_raw_spin_unlock);
+        GET_FUN(__copy_from_user);
 
         return 1;
 }
@@ -235,13 +249,14 @@ static unsigned long **find_syscall_table(void)
         ret = lookup_sym("sys_call_table");
         if (ret)
                 return ret;
-        
+        /*
         while( offset < PAGE_OFFSET + (400 * 1024 * 1024)) {
                 t = (unsigned long **)offset;
                 if (t[__NR_close] == (unsigned long*)sys_close)
                         return t;
                 offset += sizeof(void *);
         }
+        */
 
         return NULL;
 }
@@ -575,47 +590,6 @@ static int hook_filter(const char *comm)
         
 }
 
-/* task_struct may not be equal, guess offset of mm */
-struct mm_struct *get_task_mm_guess(struct task_struct *task)
-{
-	struct mm_struct *mm, *amm;
-        unsigned char *p;
-        int *ip;
-        
-        /* here start should be OK */
-        p = &task->rt;
-
-        while (1) {
-                mm = *((unsigned long*)p);
-                amm = *((unsigned long*)(p + sizeof(unsigned long*)));
-
-                if(mm == amm
-                   && (mm > 0xc0008000 && mm < 0xf0000000)) {
-                        ip = p - sizeof(struct plist_node);
-                        if (*ip == MAX_PRIO) {
-                                //printk("find mm = %x, offset = %x\n", mm,
-                                //       p - (unsigned char*)task);
-                                break;
-                        }
-                }
-                p += 1;
-                if (p - (unsigned char*)task >= 1600) {
-                        mm = NULL;
-                        break;
-                }
-        }
-                
-	if (mm) {
-		if (task->flags & PF_KTHREAD)
-			mm = NULL;
-		else
-			atomic_inc(&mm->mm_users);
-	}
-
-	return mm;
-}
-
-
 static int read_process_vm(struct task_struct *tsk, struct mm_struct *mm,
                             unsigned long addr, void *buf, int len)
 {
@@ -624,7 +598,6 @@ static int read_process_vm(struct task_struct *tsk, struct mm_struct *mm,
 
 	my_down_read(&mm->mmap_sem);
 	/* ignore errors, just check how much was successfully transferred */
-        //printk("task pid = %d\n", tsk->pid);
 	while (len) {
 		int bytes, ret, offset;
 		void *maddr = NULL;
@@ -652,9 +625,9 @@ static int read_process_vm(struct task_struct *tsk, struct mm_struct *mm,
 		} else {
 
 			bytes = len;
-			offset = addr & (PAGE_SIZE-1);
-			if (bytes > PAGE_SIZE-offset)
-				bytes = PAGE_SIZE-offset;
+			//offset = addr & (PAGE_SIZE-1);
+			//if (bytes > PAGE_SIZE-offset)
+			//	bytes = PAGE_SIZE-offset;
 
                         //printk("offset = %d, bytes = %d\n", offset, bytes);
 			//maddr = kmap(page);
@@ -663,7 +636,7 @@ static int read_process_vm(struct task_struct *tsk, struct mm_struct *mm,
                         //memcpy(buf, maddr + offset, bytes);
                         //copy_from_user_page(vma, page, addr,
                         //                    buf, maddr + offset, bytes);
-                        copy_from_user(buf, addr, bytes);
+                        my_copy_from_user(buf, addr, bytes);
 			//kunmap(page);
 			//page_cache_release(page);
 		}
@@ -691,8 +664,21 @@ static int get_command(struct task_struct *task, char *buffer)
 
  	len = mm->arg_end - mm->arg_start;
 
-        //printk("mm->arg_start = %x, mm->arg_end = %x, len = %x\n",
-        //       mm->arg_start, mm->arg_end, len);
+        /*
+        printk("mm address = %p\n", mm);
+
+        printk("page_table_lock offset = %d\n",
+               OFFSET(mm, &mm->page_table_lock));
+
+        printk("mmlist offset = %d\n",
+               OFFSET(mm, &mm->mmlist));
+
+        printk("arg_start offset = %d\n",
+               OFFSET(mm, &mm->arg_start));
+
+        printk("mm->arg_start = %x, mm->arg_end = %x, len = %x\n",
+               mm->arg_start, mm->arg_end, len);
+        */
 	if (len > PAGE_SIZE)
 		len = PAGE_SIZE;
 
@@ -737,7 +723,7 @@ static int proc_write_conf(struct file *file, const char *buffer, unsigned long 
                 len = MAX_CONF;
         else
                 len = count;
-        if (copy_from_user(hook_data.conf, buffer, len))
+        if (my_copy_from_user(hook_data.conf, buffer, len))
                 return -EFAULT;
         hook_data.conf[len] = '\0';
 
