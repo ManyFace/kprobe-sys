@@ -510,7 +510,7 @@ static int do_log(const char *fmt, ...)
 
         len = strlen(tmp);
         tlen = hook_data.log_index + len;
-        my_spin_lock(&hook_data.lock);
+        spin_lock(&hook_data.lock);
         if (tlen > hook_data.log_len) {
                 tlen = (tlen / MAX_LOG + 1) * MAX_LOG;
                 p = kmalloc(tlen, GFP_ATOMIC);
@@ -530,7 +530,7 @@ static int do_log(const char *fmt, ...)
         hook_data.log_index += len;
 
 out:
-        my_spin_unlock(&hook_data.lock);
+        spin_unlock(&hook_data.lock);
         kfree(tmp);
         return len;
 }
@@ -678,9 +678,12 @@ static int get_command(struct task_struct *task, char *buffer)
 
         printk("mm->arg_start = %x, mm->arg_end = %x, len = %x\n",
                mm->arg_start, mm->arg_end, len);
-        */
+
+
 	if (len > PAGE_SIZE)
 		len = PAGE_SIZE;
+
+        */
 
         //printk("final len = %x\n", len);
 
