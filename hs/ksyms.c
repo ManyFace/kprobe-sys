@@ -53,14 +53,12 @@ static unsigned long ks_expand_symbol(unsigned long off, char *namebuf)
 
 static long _lookup_sym_part(const char *name)
 {
-        long ret = -1;
         char namebuf[KSYM_NAME_LEN];
         unsigned long i;
         unsigned int off;
 
         if (ks_address == 0) {
-                ret = get_ksyms();
-                if (ret == 0)
+                if(!get_ksyms())
                         return -1;
         }
 
@@ -69,7 +67,7 @@ static long _lookup_sym_part(const char *name)
                 if (strncmp(namebuf, name, strlen(name)) == 0)
                         return i;
         }
-        return ret;
+        return -1;
 }
 
 unsigned long lookup_sym_part(const char *name)
@@ -107,22 +105,21 @@ unsigned long lookup_sym_part_pre(const char *name)
 
 static long _lookup_sym(const char *name)
 {
-        long ret = -1;
         char namebuf[KSYM_NAME_LEN];
         unsigned long i;
         unsigned int off;
 
-        if (ks_address == 0)
-                ret = get_ksyms();
-        if (ret == 0)
-                return -1;
+        if (ks_address == 0) {
+                if(!get_ksyms())
+                        return -1;
+        }
 
         for (i = 0, off = 0; i < *ks_num; i++) {
                 off = ks_expand_symbol(off, namebuf);
                 if (strcmp(namebuf, name) == 0)
                         return i;
         }
-        return ret;
+        return -1;
 }
 
 unsigned long lookup_sym(const char *name)
