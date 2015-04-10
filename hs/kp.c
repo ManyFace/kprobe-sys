@@ -56,7 +56,8 @@ void (*mem_txt_writeable)(unsigned long addr);
 void (*mem_txt_restore)(void);
 int mem_text_wp = 0;
 
-unsigned long my_copy_from_user(void *to, const void __user *from, unsigned long n);
+unsigned long my_copy_from_user(void *to, const void __user *from,
+                                unsigned long n);
 
 #define MEM_TXT_BEGIN(addr, flags) \
         mem_txt_write_spinlock(&flags); \
@@ -68,13 +69,16 @@ unsigned long my_copy_from_user(void *to, const void __user *from, unsigned long
 
 /* function declarations */
 struct cred *(*my_get_task_cred)(struct task_struct *task);
-int (*my_single_open)(struct file *file, int (*show)(struct seq_file *, void*), void *data);
+int (*my_single_open)(struct file *file,
+                      int (*show)(struct seq_file *, void*), void *data);
 int (*my_single_release)(struct inode *inode, struct file *file);
 int wrap_my_single_release(struct inode *inode, struct file *file);
 loff_t (*my_seq_lseek)(struct file *file, loff_t offset, int origin);
 loff_t wrap_my_seq_lseek(struct file *file, loff_t offset, int origin);
-ssize_t (*my_seq_read)(struct file *file, char __user *buf, size_t size, loff_t *ppos);
-ssize_t wrap_my_seq_read(struct file *file, char __user *buf, size_t size, loff_t *ppos);
+ssize_t (*my_seq_read)(struct file *file, char __user *buf,
+                       size_t size, loff_t *ppos);
+ssize_t wrap_my_seq_read(struct file *file, char __user *buf,
+                         size_t size, loff_t *ppos);
 int (*my_seq_printf)(struct seq_file *m, const char *f, ...);               
 struct file *(*my_filp_open)(const char *, int, umode_t);
 int (*my_filp_close)(struct file *, fl_owner_t id);
@@ -82,14 +86,16 @@ int (*my_filp_close)(struct file *, fl_owner_t id);
 void (*my_down_read)(struct rw_semaphore *sem);
 void (*my_up_read)(struct rw_semaphore *sem);
 ssize_t (*my_vfs_read)(struct file *, char __user *, size_t, loff_t *);
-ssize_t (*my_vfs_write)(struct file *, const char __user *, size_t, loff_t *);
+ssize_t (*my_vfs_write)(struct file *,
+                        const char __user *, size_t, loff_t *);
 struct mm_struct *(*my_get_task_mm)(struct task_struct *task);
 void (*my_mmput)(struct mm_struct *);
 struct file *(*my_fget)(unsigned int fd);
 void (*my_fput)(struct file *file);
 char *(*my_d_path)(const struct path*, char *, int);
 struct pid *(*my_get_task_pid)(struct task_struct *task, enum pid_type type);
-struct proc_dir_entry *(*my_proc_mkdir)(const char *, struct proc_dir_entry *);
+struct proc_dir_entry *(*my_proc_mkdir)(const char *,
+                                        struct proc_dir_entry *);
 struct porc_dir_entry *(*my_create_proc_entry)(const char *name, umode_t mode,
                                                struct proc_dir_entry *parent);
 struct proc_dir_entry *(*my_proc_create_data)(const char *name, umode_t mode,
@@ -101,7 +107,9 @@ void (*my_remove_proc_entry)(const char *name, struct proc_dir_entry *parent);
 void (*my__raw_spin_lock)(raw_spinlock_t *lock);
 void (*my__raw_spin_unlock)(raw_spinlock_t *lock);
 
-unsigned long __must_check (*my___copy_from_user)(void *to, const void __user *from, unsigned long n);
+unsigned long __must_check (*my___copy_from_user)(void *to,
+                                                  const void __user *from,
+                                                  unsigned long n);
 
 void my_spin_lock(spinlock_t *);
 void my_spin_unlock(spinlock_t *);
@@ -124,7 +132,8 @@ unsigned long get_fun_ret = 0;
                                         
 #define OFFSET(start, end) ((unsigned char*)end - (unsigned char*)start)
                       
-asmlinkage long (*rel_sys_open)(const char __user *filename, int flags, umode_t mode);
+asmlinkage long (*rel_sys_open)(const char __user *filename,
+                                int flags, umode_t mode);
 asmlinkage long (*rel_sys_close)(unsigned int fd);
 asmlinkage int (*rel_sys_execve)(const char __user *filenamei,
                                  const char __user *const __user *argv,
@@ -134,7 +143,8 @@ asmlinkage int (*rel_sys_execve)(const char __user *filenamei,
 asmlinkage long (*rel_sys_creat)(const char __user *pathname, umode_t mode);
 #endif
 
-asmlinkage long hook_sys_open(const char __user *filename, int flags, umode_t mode);
+asmlinkage long hook_sys_open(const char __user *filename,
+                              int flags, umode_t mode);
 asmlinkage long hook_sys_close(unsigned int fd);
 asmlinkage int hook_sys_execve(const char __user *filenamei,
                                const char __user *const __user *argv,
@@ -199,7 +209,8 @@ void my_spin_unlock(spinlock_t *lock)
         my__raw_spin_unlock(&lock->rlock);
 }
 
-unsigned long  my_copy_from_user(void *to, const void __user *from, unsigned long n)
+unsigned long  my_copy_from_user(void *to,
+                                 const void __user *from, unsigned long n)
 {
         if (access_ok(VERIFY_READ, from, n))
                 n = my___copy_from_user(to, from, n);
@@ -459,7 +470,8 @@ static ssize_t kwrite_file(struct file *file, char *data, size_t size)
 }
                        
 /*
-  static void log_to_user(const char *call, const char *comm, const char *filename)
+  static void log_to_user(const char *call, 
+  const char *comm, const char *filename)
   {
   int ret;
   char pid[16];
@@ -498,7 +510,7 @@ static int do_log(const char *fmt, ...)
         char *tmp = NULL;
         va_list args;
 
-        tmp = kmalloc(512, GFP_ATOMIC);
+        tmp = kmalloc(512, GFP_KERNEL);
         if (tmp == NULL) {
                 printk("can not get memory for pre log, skip write!\n");
                 return -1;
@@ -510,10 +522,10 @@ static int do_log(const char *fmt, ...)
 
         len = strlen(tmp);
         tlen = hook_data.log_index + len;
-        spin_lock(&hook_data.lock);
+        //spin_lock(&hook_data.lock);
         if (tlen > hook_data.log_len) {
                 tlen = (tlen / MAX_LOG + 1) * MAX_LOG;
-                p = kmalloc(tlen, GFP_ATOMIC);
+                p = kmalloc(tlen, GFP_KERNEL);
                 if (p == NULL) {
                         printk("log to /proc/%s/log failed!\n", MODULE_NAME);
                         len = -1;
@@ -530,14 +542,14 @@ static int do_log(const char *fmt, ...)
         hook_data.log_index += len;
 
 out:
-        spin_unlock(&hook_data.lock);
+        //spin_unlock(&hook_data.lock);
         kfree(tmp);
         return len;
 }
 
 static void write_log(const char *call, const char *filename,
-                      pid_t pid, uid_t uid, uid_t euid,
-                      const char *comm) {
+                      pid_t pid, uid_t uid, uid_t euid)
+{
         char timev[64];
         struct timeval time;
         unsigned long local_time;
@@ -550,35 +562,52 @@ static void write_log(const char *call, const char *filename,
         sprintf(timev, "%04d-%02d-%02d %02d:%02d:%02d",
                 tm.tm_year + 1900, tm.tm_mon + 1,
                 tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
-        do_log("%s\t%s\t%s\t%d\t%d\t%d\t%s\n",
-               call, timev, comm, uid, euid, pid, filename);
+        do_log("%s\t%s\t%d\t%d\t%d\t%s\n",
+               call, timev, uid, euid, pid, filename);
+}
+
+int is_digit(char c)
+{
+        if (c >= '0' && c <= '9')
+                return 1;
+        return 0;
+}
+
+unsigned long str_to_l(const char *str)
+{
+        unsigned long ret = 0;
+        while(is_digit(*str)) {
+                ret = ret * 10 + (*str - '0');
+                str++;
+        }
+        
+        return ret;
 }
 
 /* return 1 to pass filter */
-static int hook_filter(const char *comm)
+static int hook_filter(pid_t pid)
 {
         char entry[MAX_ENTRY];
         char *h, *t;
         int len = strlen(hook_data.conf);
         int find = 0;
+        unsigned long conf_pid;
 
 
-        if (!strcmp(comm, ""))
-                return 0;
-        
         if (!strcmp(hook_data.conf, ""))
                 return 0;
 
         h = hook_data.conf;
         while(h - hook_data.conf <= len) {
+
                 t = strstr(h, "\n");
                 if (t == NULL)
                         return 0;
                 strncpy(entry, h, t - h);
                 entry[t - h] = '\0';
                 h = t + 1;
-
-                if (strstr(comm, entry)) {
+                conf_pid = str_to_l(entry);
+                if (conf_pid == pid) {
                         find = 1;
                         break;
                 }
@@ -699,7 +728,8 @@ static int get_command(struct task_struct *task, char *buffer)
 			len = mm->env_end - mm->env_start;
 			if (len > PAGE_SIZE - res)
 				len = PAGE_SIZE - res;
-			res += read_process_vm(task, mm, mm->env_start, buffer+res, len);
+			res += read_process_vm(task, mm,
+                                               mm->env_start, buffer+res, len);
 			res = strnlen(buffer, res);
 		}
 	}
@@ -718,7 +748,8 @@ static int  proc_read_conf(char *page, char **start, off_t off, int count,
         return len;
 }
 
-static int proc_write_conf(struct file *file, const char *buffer, unsigned long count, void *data)
+static int proc_write_conf(struct file *file,
+                           const char *buffer, unsigned long count, void *data)
 {
         int len;
 
@@ -726,6 +757,9 @@ static int proc_write_conf(struct file *file, const char *buffer, unsigned long 
                 len = MAX_CONF;
         else
                 len = count;
+        
+        memset(hook_data.conf, 0, MAX_CONF);
+        
         if (my_copy_from_user(hook_data.conf, buffer, len))
                 return -EFAULT;
         hook_data.conf[len] = '\0';
@@ -791,7 +825,8 @@ static void wq_function(struct work_struct *work)
         kfree(work);
 }
 
-asmlinkage long hook_sys_open(const char __user *filename, int flags, umode_t mode)
+asmlinkage long hook_sys_open(const char __user *filename,
+                              int flags, umode_t mode)
 {
         pid_t pid;
         struct cred *cred;
@@ -803,13 +838,13 @@ asmlinkage long hook_sys_open(const char __user *filename, int flags, umode_t mo
         if (!((flags & O_WRONLY) || (flags & O_RDWR)
               || (flags & O_APPEND) || (flags & O_CREAT)))
                 goto out;
-        get_command(current, comm);
-        if (hook_filter(comm)) {
-                dprint("sys_open probed, comm = %s\n", comm);
-                pid = my_get_task_pid(task, PIDTYPE_PID)->numbers[0].nr;
+        //get_command(current, comm);
+        pid = my_get_task_pid(task, PIDTYPE_PID)->numbers[0].nr;
+        if (hook_filter(pid)) {
+                dprint("sys_open probed, pid = %d\n", pid);
                 cred = my_get_task_cred(task);
                 write_log("open", filename, pid, cred->uid,
-                          cred->euid, comm);
+                          cred->euid);
         }
 out:
 
@@ -847,23 +882,25 @@ asmlinkage long hook_sys_close(unsigned int fd)
 
         }
 
-        get_command(current, comm);
-        if (hook_filter(comm)) {
-                dprint("sys_close probed, comm = %s\n", comm);
-                pid = my_get_task_pid(task, PIDTYPE_PID)->numbers[0].nr;
+        pid = my_get_task_pid(task, PIDTYPE_PID)->numbers[0].nr;
+        //get_command(current, comm);
+        if (hook_filter(pid)) {
+                dprint("sys_close probed, pid = %d\n", pid);
                 cred = my_get_task_cred(task);
                 //log_to_user("close", comm, filename);
                 write_log("close", filename, pid,
                           cred->uid,
-                          cred->euid, comm);
+                          cred->euid);
                 if (strstr(filename, pat)) {
                         // init a work to perform the copy 
-                        work = (my_work_t*)kmalloc(sizeof(my_work_t), GFP_ATOMIC);
+                        work = (my_work_t*)kmalloc(sizeof(my_work_t),
+                                                   GFP_KERNEL);
                         if (work == NULL) {
                                 printk(KERN_INFO "can not alloc my_work_t!\n");
                                 goto out;
                         }
-                        work->filename = kmalloc((strlen(filename) + 1), GFP_ATOMIC);
+                        work->filename = kmalloc((strlen(filename) + 1),
+                                                 GFP_KERNEL);
                         if (work->filename == NULL) {
                                 printk(KERN_INFO "can not get memory"
                                        " for my_work->filename\n");
@@ -900,17 +937,15 @@ asmlinkage int hook_sys_execve(const char __user *filenamei,
         
         if (!strcmp(hook_data.conf, ""))
                 goto out;
-        
-        get_command(current, comm);
-        if (hook_filter(filenamei)) {
-                dprint("sys_execve probed, comm = %s\n", filenamei);
-                pid = my_get_task_pid(task, PIDTYPE_PID)->numbers[0].nr;
+        pid = my_get_task_pid(task, PIDTYPE_PID)->numbers[0].nr;
+        //get_command(current, comm);
+        if (hook_filter(pid)) {
+                dprint("sys_execve probed, pid = %d\n", pid);
                 cred = my_get_task_cred(task);
-        
                 //log_to_user("execve", comm, filenamei);
                 write_log("execve", filenamei, pid,
                           cred->uid,
-                          cred->euid, comm);
+                          cred->euid);
         }
 out:
 
@@ -933,13 +968,13 @@ asmlinkage long hook_sys_creat(const char __user *pathname, umode_t mode)
         if (!strcmp(hook_data.conf, ""))
                 goto out;
         
-        get_command(current, comm);
-        if (hook_filter(comm)) {
-                dprint("sys_creat probed, comm = %s\n", comm);
-                pid = my_get_task_pid(task, PIDTYPE_PID)->numbers[0].nr;
+        //get_command(current, comm);
+        pid = my_get_task_pid(task, PIDTYPE_PID)->numbers[0].nr;
+        if (hook_filter(pid)) {
+                dprint("sys_creat probed, pid = %d\n", pid);
                 cred = my_get_task_cred(task);
                 write_log("creat", pathname, pid, cred->uid,
-                          cred->euid, comm);
+                          cred->euid);
         }
 out:
 #ifdef KPROBE
@@ -1041,8 +1076,8 @@ static int __init kp_init(void)
 
         hook_data.log_len = MAX_LOG;
         hook_data.log_index = 0;
-        spin_lock_init(&hook_data.lock);
-        do_log("call\ttime\t\t\tcommand\t\tuid\teuid\tpid\tfile\n");
+        //spin_lock_init(&hook_data.lock);
+        do_log("call\ttime\t\t\tuid\teuid\tpid\tfile\n");
         
         hook_log = proc_create("log", 0, hook_dir, &log_fops);
         //hook_log = my_create_proc_entry("log", 0444, hook_dir);
@@ -1068,7 +1103,8 @@ static int __init kp_init(void)
                 printk(KERN_INFO "register jprobe failed, return %d", ret);
                 goto out1;
         }
-        printk(KERN_INFO "Probe for sys_open at %p, handler addr %p\n", sys_jprobe_open.kp.addr, sys_jprobe_open.entry);
+        printk(KERN_INFO "Probe for sys_open at %p, handler addr %p\n",
+               sys_jprobe_open.kp.addr, sys_jprobe_open.entry);
 
         ret = register_jprobe(&sys_jprobe_close);
 
@@ -1076,7 +1112,8 @@ static int __init kp_init(void)
                 printk(KERN_INFO "register jprobe failed, return %d", ret);
                 goto out2;
         }
-        printk(KERN_INFO "Probe for sys_close at %p, handler addr %p\n", sys_jprobe_close.kp.addr, sys_jprobe_close.entry);
+        printk(KERN_INFO "Probe for sys_close at %p, handler addr %p\n",
+               sys_jprobe_close.kp.addr, sys_jprobe_close.entry);
 
 
         ret = register_jprobe(&sys_jprobe_execve);
@@ -1085,7 +1122,8 @@ static int __init kp_init(void)
                 printk(KERN_INFO "register jprobe failed, return %d", ret);
                 goto out3;
         }
-        printk(KERN_INFO "Probe for sys_execve at %p, handler addr %p\n", sys_jprobe_execve.kp.addr, sys_jprobe_execve.entry);
+        printk(KERN_INFO "Probe for sys_execve at %p, handler addr %p\n",
+               sys_jprobe_execve.kp.addr, sys_jprobe_execve.entry);
 
         ret = register_jprobe(&sys_jprobe_creat);
 
@@ -1093,7 +1131,8 @@ static int __init kp_init(void)
                 printk(KERN_INFO "register jprobe failed, return %d", ret);
                 goto out4;
         }
-        printk(KERN_INFO "Probe for sys_creat at %p, handler addr %p\n", sys_jprobe_creat.kp.addr, sys_jprobe_creat.entry);
+        printk(KERN_INFO "Probe for sys_creat at %p, handler addr %p\n",
+               sys_jprobe_creat.kp.addr, sys_jprobe_creat.entry);
 #else
 
         mem_txt_write_spinlock = lookup_sym("mem_text_writeable_spinlock");
@@ -1152,13 +1191,17 @@ static void __exit kp_exit(void)
 #ifdef KPROBE
         /* remove probes */
         unregister_jprobe(&sys_jprobe_open);
-        printk("Probe for sys_open at %p unregistered!\n", sys_jprobe_open.kp.addr);
+        printk("Probe for sys_open at %p unregistered!\n",
+               sys_jprobe_open.kp.addr);
         unregister_jprobe(&sys_jprobe_close);
-        printk("Probe for sys_close at %p unregistered!\n", sys_jprobe_close.kp.addr);
+        printk("Probe for sys_close at %p unregistered!\n",
+               sys_jprobe_close.kp.addr);
         unregister_jprobe(&sys_jprobe_execve);
-        printk("Probe for sys_execve at %p unregistered!\n", sys_jprobe_execve.kp.addr);
+        printk("Probe for sys_execve at %p unregistered!\n",
+               sys_jprobe_execve.kp.addr);
         unregister_jprobe(&sys_jprobe_creat);
-        printk("Probe for sys_creat at %p unregistered!\n", sys_jprobe_creat.kp.addr);
+        printk("Probe for sys_creat at %p unregistered!\n",
+               sys_jprobe_creat.kp.addr);
 #else
         restore_sys_call();
 #endif
