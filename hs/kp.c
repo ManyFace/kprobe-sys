@@ -18,9 +18,6 @@
 #include <linux/sched.h>
 #include <linux/syscalls.h>
 
-#ifdef KPROBE
-#include <linux/kprobes.h>
-#endif
 
 #define MODULE_NAME "kp"
 #define MAX_CONF 4096
@@ -34,8 +31,6 @@
 #else
 #define dprint(fmt, args...) do {} while (0)
 #endif
-
-#ifndef KPROBE
 
 #define BOFF_MASK  ((1 << 24) - 1)
 
@@ -141,7 +136,7 @@ asmlinkage int (*rel_sys_execve)(const char __user *filenamei,
                                  struct pt_regs *regs);
 
 asmlinkage long (*rel_sys_creat)(const char __user *pathname, umode_t mode);
-#endif
+
 
 asmlinkage long hook_sys_open(const char __user *filename,
                               int flags, umode_t mode);
@@ -181,7 +176,6 @@ char tmp[MAX_ENTRY] = {0};
 static struct proc_dir_entry *hook_dir, *hook_conf, *hook_log;
 
 
-#ifndef KPROBE
 
 int wrap_my_single_release(struct inode *inode, struct file *file)
 {
@@ -306,7 +300,8 @@ static void restore_sys_call()
 
                         /* execve restore */
                         *b_addr = orig_inst;
-                        //flush_icache_range(syscall_table_addr, (char *)syscall_table_addr + 256);
+                        //flush_icache_range(syscall_table_addr,
+                        //(char *)syscall_table_addr + 256);
                         set_fs(old_fs);
                 }
                 printk("syscall restore successfully!\n");
@@ -415,7 +410,6 @@ static int hook_sys_call()
         return 0;
 }
 
-#endif
 
 static struct file *kopen_file(const char *path, int flags, umode_t mode)
 {
@@ -848,13 +842,8 @@ asmlinkage long hook_sys_open(const char __user *filename,
         }
 out:
 
-#ifdef KPROBE
-        jprobe_return();
-        return 0;
-#else
         //dprint("sys_open called!\n");
         return rel_sys_open(filename, flags, mode);
-#endif
 }
 
 asmlinkage long hook_sys_close(unsigned int fd)
@@ -917,13 +906,8 @@ out:
         if (file)
                 my_fput(file);
 
-#ifdef KPROBE
-        jprobe_return();
-        return 0;
-#else
         //dprint("sys_close called!\n");
         return rel_sys_close(fd);
-#endif
 }
 
 asmlinkage int hook_sys_execve(const char __user *filenamei,
@@ -949,13 +933,8 @@ asmlinkage int hook_sys_execve(const char __user *filenamei,
         }
 out:
 
-#ifdef KPROBE
-        jprobe_return();
-        return 0;
-#else
         //dprint("sys_execve called!\n");
         return rel_sys_execve(filenamei, argv, envp, regs);
-#endif
 }
 
 asmlinkage long hook_sys_creat(const char __user *pathname, umode_t mode)
@@ -977,44 +956,8 @@ asmlinkage long hook_sys_creat(const char __user *pathname, umode_t mode)
                           cred->euid);
         }
 out:
-#ifdef KPROBE
-        jprobe_return();
-        return 0;
-#else
         return rel_sys_creat(pathname, mode);
-#endif
 }
-
-#ifdef KPROBE
-static struct jprobe sys_jprobe_open = {
-        .entry = hook_sys_open,
-        .kp = {
-                .symbol_name = "sys_open",
-        },
-};
-
-static struct jprobe sys_jprobe_close = {
-        .entry = hook_sys_close,
-        .kp = {
-                .symbol_name = "sys_close",
-        },
-};
-
-static struct jprobe sys_jprobe_execve = {
-        .entry = hook_sys_execve,
-        .kp = {
-                .symbol_name = "sys_execve",
-        },
-};
-
-static struct jprobe sys_jprobe_creat = {
-        .entry = hook_sys_creat,
-        .kp = {
-                .symbol_name = "sys_creat",
-        },
-};
-
-#endif
 
 static int log_show(struct seq_file *m, void *v)
 {
@@ -1096,44 +1039,6 @@ static int __init kp_init(void)
         }
         printk(KERN_INFO "workqueue create success!\n");
 
-#ifdef KPROBE
-        ret = register_jprobe(&sys_jprobe_open);
-
-        if (ret < 0) {
-                printk(KERN_INFO "register jprobe failed, return %d", ret);
-                goto out1;
-        }
-        printk(KERN_INFO "Probe for sys_open at %p, handler addr %p\n",
-               sys_jprobe_open.kp.addr, sys_jprobe_open.entry);
-
-        ret = register_jprobe(&sys_jprobe_close);
-
-        if (ret < 0) {
-                printk(KERN_INFO "register jprobe failed, return %d", ret);
-                goto out2;
-        }
-        printk(KERN_INFO "Probe for sys_close at %p, handler addr %p\n",
-               sys_jprobe_close.kp.addr, sys_jprobe_close.entry);
-
-
-        ret = register_jprobe(&sys_jprobe_execve);
-
-        if (ret < 0) {
-                printk(KERN_INFO "register jprobe failed, return %d", ret);
-                goto out3;
-        }
-        printk(KERN_INFO "Probe for sys_execve at %p, handler addr %p\n",
-               sys_jprobe_execve.kp.addr, sys_jprobe_execve.entry);
-
-        ret = register_jprobe(&sys_jprobe_creat);
-
-        if (ret < 0) {
-                printk(KERN_INFO "register jprobe failed, return %d", ret);
-                goto out4;
-        }
-        printk(KERN_INFO "Probe for sys_creat at %p, handler addr %p\n",
-               sys_jprobe_creat.kp.addr, sys_jprobe_creat.entry);
-#else
 
         mem_txt_write_spinlock = lookup_sym("mem_text_writeable_spinlock");
         if (mem_txt_write_spinlock) {
@@ -1147,24 +1052,12 @@ static int __init kp_init(void)
         if (hook_sys_call()) {
                 goto err_hook;
         }
-#endif
-
         printk("hook so file name pat = \"%s\"\n", pat);
         printk("module %s initialized success!\n", MODULE_NAME);
         
         return 0;
 
-#ifdef KPROBE
-out4:
-        unregister_jprobe(&sys_jprobe_execve);
-out3:
-        unregister_jprobe(&sys_jprobe_close);
-out2:
-        unregister_jprobe(&sys_jprobe_open);
-out1:
-#else
 err_hook:
-#endif
         destroy_workqueue(my_wq);
 no_wq:
         my_remove_proc_entry("log", hook_dir);
@@ -1188,23 +1081,7 @@ out:
 static void __exit kp_exit(void)
 {
 
-#ifdef KPROBE
-        /* remove probes */
-        unregister_jprobe(&sys_jprobe_open);
-        printk("Probe for sys_open at %p unregistered!\n",
-               sys_jprobe_open.kp.addr);
-        unregister_jprobe(&sys_jprobe_close);
-        printk("Probe for sys_close at %p unregistered!\n",
-               sys_jprobe_close.kp.addr);
-        unregister_jprobe(&sys_jprobe_execve);
-        printk("Probe for sys_execve at %p unregistered!\n",
-               sys_jprobe_execve.kp.addr);
-        unregister_jprobe(&sys_jprobe_creat);
-        printk("Probe for sys_creat at %p unregistered!\n",
-               sys_jprobe_creat.kp.addr);
-#else
         restore_sys_call();
-#endif
 
         /* destroy workqueue */
         flush_workqueue(my_wq);
